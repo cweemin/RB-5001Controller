@@ -5,12 +5,14 @@
 #define FS_BROWSER
 #define ARDUINO_OTA
 #define SWAMP_COOLER
-
+#define SERIAL_DEBUG
 #define SYSLOG_SERVER "logs.papertrailapp.com"
 #define SYSLOG_PORT 514
+// Maximum number of item to GET
+#define MAXGET 100
 
 // TimeZone Stuff
-#define TZ              1       // (utc+) TZ in hours
+#define TZ              -7       // (utc+) TZ in hours
 #define TZ_SEC          ((TZ)*3600)
 #define DST_SEC 0
 
@@ -23,4 +25,7 @@
 //WIFI STUFF
 #define WiFiSSID  ""
 #define WiFiPSK   ""
+
+// Temperature sensorpin (analog)
+#define SENSORPIN 0
 #endif

@@ -36,8 +36,6 @@ Syslog syslog(udpClient, SYSLOG_SERVER, SYSLOG_PORT, HOST_NAME, HOST_NAME, LOG_K
 
 #endif
 // User settings are below here
-//const bool getTime = true;                                    // Set to false to disable querying for the time
-//const int timeOffset = -25200;                                // Timezone offset in seconds for MST (UTC-7)
 timeval cbtime;
 bool cbtime_set = false;
 void time_is_set(void)
@@ -46,6 +44,7 @@ void time_is_set(void)
   cbtime_set = true;
   time_t now = time(nullptr);
   logM("Time is set to " + String(ctime(&now))); 
+  
 }
 
 // Pins for Transmit
@@ -67,19 +66,44 @@ const char* poolServerName = "pool.ntp.org";
 #ifdef FS_BROWSER
 //holds the current upload
 File fsUploadFile;
+class {
+  private:
+    float min=100,max=-100,current;
+    int totalReading[MAXGET];
+    uint8_t index=0;
+    bool sampled = false;
+    float getAverage() {
+      uint8_t t_max = sampled ? MAXGET: index;
+      int32_t total = 0;
+      for(uint8_t i = 0; i< t_max; i++) {
+        total += totalReading[i];
+      }
+      return total / (float) t_max;
+    }
 
-//format bytes
-String formatBytes(size_t bytes) {
-  if (bytes < 1024) {
-    return String(bytes) + "B";
-  } else if (bytes < (1024 * 1024)) {
-    return String(bytes / 1024.0) + "KB";
-  } else if (bytes < (1024 * 1024 * 1024)) {
-    return String(bytes / 1024.0 / 1024.0) + "MB";
-  } else {
-    return String(bytes / 1024.0 / 1024.0 / 1024.0) + "GB";
-  }
-}
+  public:
+    void sample() {
+      totalReading[index++] = analogRead(SENSORPIN);
+      if (index > MAXGET) {
+        index = 0;
+        sampled = true;
+      }
+    }
+    float getTemp(float input_voltage) {
+       //int reading = analogRead(SENSORPIN); 
+       // measure the 3.3v with a meter for an accurate value
+       //In particular if your Arduino is USB powered
+       float current = getAverage() * input_voltage; 
+       current /= 1024.0; 
+       // now print out the temperature
+       current =  (current - 0.5) * 100;
+       if (current < min) 
+         min = current;
+       if (current > max)
+         max = current;
+       return current;
+    }
+} room_temperature;
 
 String getContentType(String filename) {
   if (server->hasArg("download")) {
@@ -383,14 +407,18 @@ void setup() {
       }
     }
   });
-  server->on("/sync", []() {
-      getWeather();
+  server->on("/temperature", []() {
+      float voltage = server->hasArg("voltage") ? server->arg(voltage).toFloat() : 3.06;
+      float celcius = room_temperature.getTemp(voltage);
+      float Fehrenheit = celcius * 9.0 /5.0 + 32;
+      server->send(200, "application/json", "{\"temperature\": {\"celcius\":"+String(celcius)+", \"fahrenheit\":"+String(Fehrenheit)+"}}");
   });
 
-  server->on("/states", []() { // JSON handler for more complicated IR blaster routines
+  server->on("/states", []() {
     if (server->hasArg("value")) {
-      StaticJsonBuffer<224> jsonBuffer;
-      logM("parsing value " + server->arg("value"));
+      //StaticJsonBuffer<224> jsonBuffer;
+      DynamicJsonBuffer jsonBuffer;
+      logM("parsing value \"" + server->arg("value")+"\"");
       JsonArray& root = jsonBuffer.parseArray(server->arg("value"));
       if (!root.success()) {
         server->send(400, "text/plain", "JSON parsing failed");
@@ -429,5 +457,6 @@ void setup() {
 void loop() {
   server->handleClient();
   ArduinoOTA.handle();
+  room_temperature.sample();
   delay(200);
 }

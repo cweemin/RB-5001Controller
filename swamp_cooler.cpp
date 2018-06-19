@@ -3,7 +3,7 @@
 #include "util.h"
 
 String returnSwampStates() {
-  return "{"+power_Btn.name()+pump_Btn.name()+fan_Btn.name()+"}";
+  return "{"+power_Btn.name()+","+pump_Btn.name()+","+fan_Btn.name()+"}";
 }
 swampCoolerButton* selectButton(String name) {
   if (name == PUMP_NAME) {
