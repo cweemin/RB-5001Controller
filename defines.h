@@ -1,15 +1,16 @@
 #ifndef __local_h
 #define __local_h
 
-#define SYSLOG
+//#define SYSLOG
 #define FS_BROWSER
 #define ARDUINO_OTA
 #define SWAMP_COOLER
 #define SERIAL_DEBUG
+#define AM2320_SENSOR
 #define SYSLOG_SERVER "logs.papertrailapp.com"
 #define SYSLOG_PORT 514
 // Maximum number of item to GET
-#define MAXGET 100
+#define MAXGET 10
 
 // TimeZone Stuff
 #define TZ              -7       // (utc+) TZ in hours

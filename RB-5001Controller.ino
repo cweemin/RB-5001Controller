@@ -20,6 +20,10 @@
 #include <Syslog.h>
 #endif
 #include "swamp_cooler.h"
+#ifdef AM2320_SENSOR
+#include <AM2320.h>
+  AM2320 th;
+#endif
 
 
 #ifndef ARDUINO_OTA
@@ -48,7 +52,7 @@ void time_is_set(void)
 }
 
 // Pins for Transmit
-const int pins1 = 4;                                          // Transmitting preset 1
+const int pins1 = 0;                                          // Transmitting preset 1
 
 // User settings are above here
 const int ledpin = BUILTIN_LED;                               // Built in LED defined for WEMOS people
@@ -66,6 +70,7 @@ const char* poolServerName = "pool.ntp.org";
 #ifdef FS_BROWSER
 //holds the current upload
 File fsUploadFile;
+#ifdef TEMP_SENSOR
 class {
   private:
     float min=100,max=-100,current;
@@ -84,7 +89,7 @@ class {
   public:
     void sample() {
       totalReading[index++] = analogRead(SENSORPIN);
-      if (index > MAXGET) {
+      if (index >= MAXGET) {
         index = 0;
         sampled = true;
       }
@@ -104,7 +109,7 @@ class {
        return current;
     }
 } room_temperature;
-
+#endif
 String getContentType(String filename) {
   if (server->hasArg("download")) {
     return "application/octet-stream";
@@ -378,6 +383,23 @@ void setup() {
   });
 #endif
 #ifdef SWAMP_COOLER 
+  server->on("/click", []() {
+    boolean good = false;
+    if (server->hasArg("device")) {
+      good = true;
+      String device = server->arg("device");
+      device.toLowerCase();
+      swampCoolerButton *button = selectButton(device);
+      button->click();
+    }
+    if (good) {
+      server->send(200, "text/plan", "OK");
+      return;
+    } else {
+      server->send(400, "text/plain", "Error");
+      return;
+    }
+  });
   server->on("/swamp", []() {
     if (server->hasArg("device") and server->hasArg("state")) {
       String device = server->arg("device");
@@ -397,7 +419,7 @@ void setup() {
         button->verifyState(1);
         button = selectButton("fan");
         button->verifyState(2);
-        server->send(200, "text/plan", "OK");
+        server->send(200, "ftext/plan", "OK");
         return;
       }
       if (button->verifyState(state)) {
@@ -407,13 +429,6 @@ void setup() {
       }
     }
   });
-  server->on("/temperature", []() {
-      float voltage = server->hasArg("voltage") ? server->arg(voltage).toFloat() : 3.06;
-      float celcius = room_temperature.getTemp(voltage);
-      float Fehrenheit = celcius * 9.0 /5.0 + 32;
-      server->send(200, "application/json", "{\"temperature\": {\"celcius\":"+String(celcius)+", \"fahrenheit\":"+String(Fehrenheit)+"}}");
-  });
-
   server->on("/states", []() {
     if (server->hasArg("value")) {
       //StaticJsonBuffer<224> jsonBuffer;
@@ -440,7 +455,33 @@ void setup() {
     server->send(200,"application/json", returnSwampStates());
   });
 #endif
-
+#ifdef AM2320_SENSOR
+  server->on("/temperature", []() {
+      if (th.measure()) {
+        logM("Celcius: "+String(th.getTemperature()) + " , Humidity: " + String(th.getHumidity()));
+        server->send(200, "application/json", "{\"temperature\":\""+String(th.getTemperature())+"\",\"humidity\":\""+String(th.getHumidity())+"\"}");
+      } else {
+        switch(th.getErrorCode()) {
+          case 2:
+            logM("CRC failed");
+            server->send(400, "text/plain", "CRC Failed");
+          break;
+          case 1:
+            logM("Sensor offline");
+            server->send(400, "text/plain", "sensor offline");
+          break;
+          default:
+            logM("Unknown read");
+            server->send(400,"text/plain", "unknown error");
+          break;
+        }
+      }
+//      float voltage = server->hasArg("voltage") ? server->arg(voltage).toFloat() : 3.06;
+//      float celcius = room_temperature.getTemp(voltage);
+//      float Fehrenheit = celcius * 9.0 /5.0 + 32;
+//      server->send(200, "application/json", "{\"temperature\": {\"celcius\":"+String(celcius)+", \"fahrenheit\":"+String(Fehrenheit)+"}}");
+  });
+#endif
 #ifndef ARDUINO_OTA
   httpUpdater.setup(server, UPDATE_PATH, www_username,www_password);
 #endif
@@ -453,10 +494,13 @@ void setup() {
 #ifdef SERIAL_DEBUG
   Serial.println("Ready to send and receive IR signals");
 #endif
+#ifdef AM2320_SENSOR
+  th.begin();
+#endif
 }
 void loop() {
   server->handleClient();
   ArduinoOTA.handle();
-  room_temperature.sample();
+  //room_temperature.sample();
   delay(200);
 }
