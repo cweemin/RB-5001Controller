@@ -15,16 +15,27 @@
 #include <time.h>                       // time() ctime()
 #include <sys/time.h>                   // struct timeval
 #include <coredecls.h>                  // settimeofday_cb()
-// SYSLOG
-#ifdef SYSLOG
-#include <Syslog.h>
-#endif
 #include "swamp_cooler.h"
+
 #ifdef AM2320_SENSOR
 #include <AM2320.h>
   AM2320 th;
 #endif
-
+#ifdef BME280_SENSOR
+#include <Wire.h>
+#include <Adafruit_Sensor.h>
+#include <Adafruit_BME280.h>
+const int BME280_SDA=D6;
+const int BME280_SCL=D7;
+#define SEALEVELPRESSURE_HPA (1013.25)
+Adafruit_BME280 bme;
+#endif
+// SYSLOG
+#ifdef SYSLOG
+#include <Syslog.h>
+WiFiUDP udpClient;
+Syslog syslog(udpClient, SYSLOG_SERVER, SYSLOG_PORT, HOST_NAME, HOST_NAME, LOG_KERN);
+#endif
 
 #ifndef ARDUINO_OTA
 #include <ESP8266HTTPUpdateServer.h>
@@ -34,11 +45,9 @@
 ESP8266HTTPUpdateServer httpUpdater;
 #endif
 
-#ifdef SYSLOG
-WiFiUDP udpClient;
-Syslog syslog(udpClient, SYSLOG_SERVER, SYSLOG_PORT, HOST_NAME, HOST_NAME, LOG_KERN);
 
-#endif
+
+
 // User settings are below here
 timeval cbtime;
 bool cbtime_set = false;
@@ -52,12 +61,11 @@ void time_is_set(void)
 }
 
 // Pins for Transmit
-const int pins1 = 0;                                          // Transmitting preset 1
-
+const int pins1 = D2;                                          // Transmitting preset 1
 // User settings are above here
 const int ledpin = BUILTIN_LED;                               // Built in LED defined for WEMOS people
 const char *wifi_config_name = "RB5001 IR Controller";
-const char *WEATHER_ENDPOINT = "http://esp/weather";
+const char *WEATHER_ENDPOINT = "http://irled/weather";
 int port = 80;
 
 ESP8266WebServer *server = NULL;
@@ -419,7 +427,7 @@ void setup() {
         button->verifyState(1);
         button = selectButton("fan");
         button->verifyState(2);
-        server->send(200, "ftext/plan", "OK");
+        server->send(200, "text/plain", "OK");
         return;
       }
       if (button->verifyState(state)) {
@@ -476,14 +484,26 @@ void setup() {
           break;
         }
       }
-//      float voltage = server->hasArg("voltage") ? server->arg(voltage).toFloat() : 3.06;
-//      float celcius = room_temperature.getTemp(voltage);
-//      float Fehrenheit = celcius * 9.0 /5.0 + 32;
-//      server->send(200, "application/json", "{\"temperature\": {\"celcius\":"+String(celcius)+", \"fahrenheit\":"+String(Fehrenheit)+"}}");
+
+  });  
+#endif
+#ifdef BME280_SENSOR
+  server->on("/temperature", []() {      
+        logM("Celcius: "+String(bme.readTemperature()) + " , Humidity: " + String(bme.readHumidity()));
+        server->send(200, "application/json", "{\"temperature\":\""+String(bme.readTemperature())+"\",\"humidity\":\""+String(bme.readHumidity())+"\",\"pressure\":\""+String(bme.readPressure() / 100.0F)+"\",\"altitude\":\""+String(bme.readAltitude(SEALEVELPRESSURE_HPA))+"\"}");
   });
 #endif
 #ifndef ARDUINO_OTA
   httpUpdater.setup(server, UPDATE_PATH, www_username,www_password);
+#endif
+#ifdef BME280_SENSOR
+  Wire.begin(BME280_SDA, BME280_SCL);
+  if (! bme.begin(&Wire)) {
+    Serial.println("Could not find a valid BME280 sensor, check wiring!");
+    while (1);
+  } else {
+    Serial.println("BME280 Setup");
+  }
 #endif
   server->begin();
 #ifdef SERIAL_DEBUG
